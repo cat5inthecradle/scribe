@@ -1,0 +1,54 @@
+[project]
+name = "scribe"
+version = "0.1.0"
+description = "Local audio transcription with speaker separation"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "typer>=0.15",
+    "rich>=13.9",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Host fast path: Metal via MLX. macOS + Apple Silicon only.
+mlx = [
+    "parakeet-mlx>=0.3",
+]
+# Diarization. Torch-based; CPU or MPS on macOS, CPU in containers.
+diarize = [
+    "pyannote-audio>=4.0",
+    "torch>=2.5",
+    "torchaudio>=2.5",
+]
+
+[project.scripts]
+scribe = "scribe.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scribe"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Word-list fixtures read better as "a b c".split() than as list literals.
+"tests/*" = ["SIM905"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

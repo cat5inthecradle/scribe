@@ -1,0 +1,21 @@
+# Copy to scribe.toml to override defaults. Env vars (SCRIBE_*) win over this.
+
+# data_dir = "data"          # intake/, work/, out/ live here
+
+[asr]
+backend = "mlx"              # "mlx" on Apple Silicon, "onnx" in containers
+# mlx_model = "mlx-community/parakeet-tdt-0.6b-v3"
+
+[diarize]
+device = "auto"              # auto | cpu | mps | cuda — benchmark, don't assume
+# num_speakers = 3           # pin it when known; improves the split noticeably
+# min_speakers = 2
+# max_speakers = 6
+
+[merge]
+# Tune these against your own audio; the defaults suit meeting recordings.
+nearest_window_s = 0.25      # how far a word reaches for a nearby speaker
+smooth_max_words = 2         # absorb speaker runs this short...
+smooth_max_duration_s = 0.4  # ...but only if also this brief
+turn_gap_s = 1.5             # silence that starts a new turn
+turn_max_duration_s = 60.0   # past this, split at a sentence end
