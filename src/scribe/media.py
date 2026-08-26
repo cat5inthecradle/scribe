@@ -17,13 +17,22 @@ from pathlib import Path
 TARGET_RATE = 16_000
 TARGET_CHANNELS = 1
 
-# Containers ffmpeg handles that we accept from the intake folder. Deliberately
-# a allowlist: the intake dir will accumulate .DS_Store, partial downloads, etc.
+# Extensions we accept without probing. Not exhaustive by design — see
+# `is_media_file`, which falls back to asking ffprobe.
 MEDIA_SUFFIXES = frozenset(
     {
         ".mp3", ".m4a", ".mp4", ".wav", ".flac", ".ogg", ".opus", ".aac",
         ".webm", ".mkv", ".mov", ".avi", ".wma", ".aiff", ".aif", ".m4v", ".3gp",
+        ".qta", ".caf", ".m4b", ".amr", ".mpga", ".mp2", ".wv", ".ts", ".mts",
     }
+)
+
+# Names that accumulate in a watched folder and are never media.
+IGNORED_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", "@eaDir"})
+
+# In-flight writes. Probing these races the writer and yields garbage duration.
+IGNORED_SUFFIXES = frozenset(
+    {".partial", ".crdownload", ".download", ".part", ".tmp", ".filepart"}
 )
 
 
@@ -47,8 +56,36 @@ def require_ffmpeg() -> None:
             )
 
 
+def has_audio_stream(path: Path) -> bool:
+    """Ask ffprobe whether the file contains a decodable audio stream."""
+    proc = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a",
+         "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)],
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0 and "audio" in proc.stdout
+
+
 def is_media_file(path: Path) -> bool:
-    return path.suffix.lower() in MEDIA_SUFFIXES
+    """Whether the intake folder should pick this file up.
+
+    An extension allowlist alone is wrong: recorders invent containers (Apple's
+    own screen capture writes `.qta`) and a skipped file looks identical to a
+    broken pipeline from the outside. So unknown extensions get probed rather
+    than rejected, and the allowlist exists only to skip the probe in the common
+    case. Junk names and in-flight download suffixes are excluded outright,
+    because probing a file still being written is both wasteful and misleading.
+    """
+    name = path.name
+    if name.startswith(".") or name in IGNORED_NAMES:
+        return False
+    suffix = path.suffix.lower()
+    if suffix in IGNORED_SUFFIXES:
+        return False
+    if suffix in MEDIA_SUFFIXES:
+        return True
+    return has_audio_stream(path)
 
 
 def sha256_file(path: Path, *, chunk: int = 1 << 20) -> str:
