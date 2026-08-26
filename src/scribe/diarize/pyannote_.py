@@ -51,6 +51,30 @@ def resolve_device(preference: str = "auto") -> str:
     return "cpu"
 
 
+def _load_waveform(wav: Path) -> dict:
+    """Read a WAV into the dict form pyannote accepts.
+
+    Deliberately not passing a file path. pyannote 4.x decodes paths through
+    torchcodec, which links against a specific FFmpeg major version and breaks
+    against whatever the host actually has (Homebrew ships 8.x; torchcodec
+    probes for 4.x first and raises). We have already normalized to 16 kHz mono
+    upstream, so handing over the samples directly removes that coupling
+    entirely, skips a redundant decode, and behaves identically in a container
+    where the FFmpeg version will differ again.
+    """
+    import soundfile as sf
+    import torch
+
+    samples, sample_rate = sf.read(str(wav), dtype="float32", always_2d=True)
+    # soundfile gives (frames, channels); pyannote wants (channels, frames).
+    waveform = torch.from_numpy(samples.T).contiguous()
+    return {
+        "waveform": waveform,
+        "sample_rate": int(sample_rate),
+        "uri": wav.stem,
+    }
+
+
 class PyannoteDiarizer:
     name = "pyannote"
 
@@ -124,7 +148,9 @@ class PyannoteDiarizer:
         pipeline = self._load()
         hook = _ProgressHook(self._on_progress) if self._on_progress else None
 
-        output = pipeline(str(wav), hook=hook, **self._constraints())
+        output = pipeline(
+            _load_waveform(Path(wav)), hook=hook, **self._constraints()
+        )
 
         exclusive = _to_segments(
             getattr(output, "exclusive_speaker_diarization", None)

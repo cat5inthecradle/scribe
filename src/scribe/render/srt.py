@@ -27,22 +27,45 @@ class Cue:
 
 
 def _chunk(words: list[Word]) -> list[list[Word]]:
-    """Split a turn's words into cue-sized groups."""
+    """Split a turn's words into cue-sized groups of roughly equal length.
+
+    Filling each cue to the maximum before starting the next one is the obvious
+    approach but reads badly: it leaves the remainder as a runt final cue, so a
+    95-character turn becomes one full cue plus a lone "review." flashing on
+    screen. Instead, work out how many cues are needed and aim for an even share
+    across them, which also tends to land breaks on clause boundaries.
+    """
+    words = [w for w in words if w.text.strip()]
+    if not words:
+        return []
+
+    lengths = [len(w.text.strip()) for w in words]
+    total_chars = sum(lengths) + len(words) - 1  # joining spaces
+    total_seconds = words[-1].end - words[0].start
+
+    count = max(
+        1,
+        -(-total_chars // MAX_CUE_CHARS),      # ceil division
+        -(-int(total_seconds) // int(MAX_CUE_SECONDS)) if total_seconds else 1,
+    )
+    target = total_chars / count
+
     chunks: list[list[Word]] = []
     buf: list[Word] = []
     chars = 0
 
-    for word in words:
-        token = word.text.strip()
-        if not token:
-            continue
-        would_be = chars + len(token) + (1 if buf else 0)
-        too_wide = buf and would_be > MAX_CUE_CHARS
-        too_long = buf and (word.end - buf[0].start) > MAX_CUE_SECONDS
-        if too_wide or too_long:
+    for word, length in zip(words, lengths, strict=True):
+        would_be = chars + length + (1 if buf else 0)
+        # Close the cue when it is already at its fair share, or when taking one
+        # more word would breach a hard limit.
+        if buf and (
+            chars >= target
+            or would_be > MAX_CUE_CHARS
+            or (word.end - buf[0].start) > MAX_CUE_SECONDS
+        ):
             chunks.append(buf)
             buf, chars = [], 0
-            would_be = len(token)
+            would_be = length
         buf.append(word)
         chars = would_be
 

@@ -94,6 +94,28 @@ class TestSubtitles:
         assert all(len(c.text) <= MAX_CUE_CHARS for c in cues)
         assert all(c.end > c.start for c in cues)
 
+    def test_cues_are_balanced_not_greedy(self, make_transcript):
+        # Greedy filling leaves a runt final cue (one full cue + "review."),
+        # which flashes on screen. Cues should be roughly even instead.
+        words = sequence(*("this turn is deliberately long enough that it must "
+                           "be broken across more than one subtitle cue before "
+                           "it can be read comfortably on screen").split())
+        d = Diarization(exclusive=[Segment(A, 0.0, 999.0)], overlapped=[])
+        turns, spk = merge(words, d)
+        cues = build_cues(make_transcript(turns, spk))
+        assert len(cues) >= 2
+        shortest, longest = min(len(c.text) for c in cues), max(len(c.text) for c in cues)
+        assert shortest * 2 >= longest, f"unbalanced cues: {shortest} vs {longest}"
+
+    def test_no_single_word_orphan_cue(self, make_transcript):
+        words = sequence(*("one two three four five six seven eight nine ten "
+                           "eleven twelve thirteen fourteen fifteen").split())
+        d = Diarization(exclusive=[Segment(A, 0.0, 999.0)], overlapped=[])
+        turns, spk = merge(words, d)
+        cues = build_cues(make_transcript(turns, spk))
+        if len(cues) > 1:
+            assert len(cues[-1].text.split()) > 1, "final cue is a lone word"
+
     def test_cues_are_chronological(self, make_transcript):
         cues = build_cues(two_speaker(make_transcript))
         assert cues == sorted(cues, key=lambda c: c.start)
