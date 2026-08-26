@@ -15,7 +15,8 @@ device = "auto"              # auto | cpu | mps | cuda — benchmark, don't assu
 [merge]
 # Tune these against your own audio; the defaults suit meeting recordings.
 nearest_window_s = 0.25      # how far a word reaches for a nearby speaker
-smooth_max_words = 2         # absorb speaker runs this short...
+min_segment_s = 0.12         # ignore diarization segments too short to own a word
+smooth_max_words = 5         # absorb speaker runs this short...
 smooth_max_duration_s = 0.4  # ...but only if also this brief
 turn_gap_s = 1.5             # silence that starts a new turn
 turn_max_duration_s = 60.0   # past this, split at a sentence end

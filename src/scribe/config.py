@@ -31,8 +31,26 @@ class MergeSettings(BaseModel):
     nearest_window_s: float = 0.25
     """A word overlapping no segment adopts a speaker within this distance."""
 
-    smooth_max_words: int = 2
-    """Runs of at most this many words can be absorbed into their neighbours."""
+    min_segment_s: float = 0.12
+    """Discard diarization segments shorter than this before attributing words.
+
+    During crosstalk, pyannote emits segments as short as 0.02s while it
+    flickers between speakers. No word is 20ms long, so such a segment cannot
+    meaningfully own one — but it still wins the overlap vote for whatever word
+    it touches, which is a direct cause of mid-sentence speaker flips. Words
+    left uncovered fall through to the nearest-segment and carry-forward rules,
+    which is the better guess.
+    """
+
+    smooth_max_words: int = 5
+    """Runs of at most this many words can be absorbed into their neighbours.
+
+    Duration is the meaningful test; this is a generous safety cap. Rapid
+    conversational speech fits 3-4 words into 0.4s, so a tight word limit
+    silently defeats the duration rule -- observed on real audio, where a
+    3-word 0.32s fragment escaped smoothing and split one question across
+    three turns.
+    """
 
     smooth_max_duration_s: float = 0.4
     """...but only if the run is also shorter than this. Both must hold."""

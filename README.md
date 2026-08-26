@@ -110,7 +110,8 @@ because the right values depend on the audio:
 ```toml
 [merge]
 nearest_window_s = 0.25       # how far a word reaches for a speaker
-smooth_max_words = 2          # runs this short can be absorbed...
+min_segment_s = 0.12          # ignore segments too short to own a word
+smooth_max_words = 5          # runs this short can be absorbed...
 smooth_max_duration_s = 0.4   # ...if they're also this brief
 turn_gap_s = 1.5              # silence that splits a turn
 ```
@@ -118,7 +119,7 @@ turn_gap_s = 1.5              # silence that splits a turn
 ## Development
 
 ```bash
-uv run pytest          # 68 tests, no models or network needed
+uv run pytest          # 94 tests, no models or network needed
 uv run ruff check src tests
 ```
 

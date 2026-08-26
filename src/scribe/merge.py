@@ -97,6 +97,17 @@ class _Timeline:
         return 0.0
 
 
+def usable_segments(exclusive: list[Segment], cfg: MergeSettings) -> list[Segment]:
+    """Drop segments too short to own a word. See `MergeSettings.min_segment_s`.
+
+    If filtering would leave nothing at all, keep the original: a noisy timeline
+    still beats no timeline, and every word falling back to UNKNOWN is worse
+    than imperfect attribution.
+    """
+    kept = [s for s in exclusive if s.duration >= cfg.min_segment_s]
+    return kept or exclusive
+
+
 def attribute(
     words: list[Word], exclusive: list[Segment], cfg: MergeSettings
 ) -> list[str]:
@@ -257,7 +268,7 @@ def merge(
         return [], []
 
     words = sorted(words, key=lambda w: (w.start, w.end))
-    speakers = attribute(words, diarization.exclusive, cfg)
+    speakers = attribute(words, usable_segments(diarization.exclusive, cfg), cfg)
     speakers = smooth(words, speakers, cfg)
     turns = group(words, speakers, cfg)
     return turns, build_speakers(turns)

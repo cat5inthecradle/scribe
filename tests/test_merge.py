@@ -16,6 +16,7 @@ from scribe.merge import (
     join_words,
     merge,
     smooth,
+    usable_segments,
 )
 from scribe.types import UNKNOWN_SPEAKER, Diarization, Segment
 
@@ -26,6 +27,10 @@ A, B, C = "SPEAKER_00", "SPEAKER_01", "SPEAKER_02"
 
 def diar(*segments: Segment) -> Diarization:
     return Diarization(exclusive=list(segments), overlapped=list(segments))
+
+
+def spans_of(segs: list[Segment]) -> list[tuple[str, float, float]]:
+    return [(s.speaker, round(s.start, 3), round(s.end, 3)) for s in segs]
 
 
 class TestAttribute:
@@ -66,6 +71,40 @@ class TestAttribute:
         assert len(attribute(words, segs, CFG)) == len(words)
 
 
+class TestUsableSegments:
+    """Micro-segment filtering. Regression: real crosstalk audio."""
+
+    def test_sub_word_segments_are_discarded(self):
+        segs = [
+            Segment(A, 0.0, 5.0),
+            Segment(B, 5.00, 5.02),   # 20ms — pyannote flicker, not speech
+            Segment(A, 5.02, 5.04),
+            Segment(B, 6.0, 7.5),
+        ]
+        kept = usable_segments(segs, CFG)
+        assert spans_of(kept) == [(A, 0.0, 5.0), (B, 6.0, 7.5)]
+
+    def test_filtering_everything_falls_back_to_the_original(self):
+        # A noisy timeline still beats no timeline: without this, every word
+        # would go UNKNOWN.
+        segs = [Segment(A, 0.0, 0.02), Segment(B, 0.02, 0.04)]
+        assert usable_segments(segs, CFG) == segs
+
+    def test_flicker_no_longer_steals_a_word(self):
+        # Observed on real audio: "But wait a minute, do you do your own
+        # stunts?" was split across three turns because a 0.02s segment won
+        # the overlap vote for a word in the middle of it.
+        words = sequence("But", "wait", "a", "minute", "do", "you", "do", "your", "own")
+        segs = [
+            Segment(A, 0.0, 1.5),
+            Segment(B, 1.50, 1.52),   # flicker inside one continuous question
+            Segment(A, 1.52, 5.0),
+        ]
+        turns, _ = merge(words, diar(*segs), CFG)
+        assert len(turns) == 1, f"question split into {len(turns)} turns"
+        assert turns[0].speaker == A
+
+
 class TestSmooth:
     def test_single_word_flap_between_one_speaker_is_absorbed(self):
         words = sequence("I", "think", "yes", "we", "should")
@@ -75,6 +114,18 @@ class TestSmooth:
         # A genuine three-way exchange, not an artifact — nothing to absorb into.
         words = sequence("I", "think", "yes", "we", "should")
         assert smooth(words, [A, A, B, C, C], CFG) == [A, A, B, C, C]
+
+    def test_rapid_multiword_fragment_is_absorbed(self):
+        # Regression: 3 words in 0.32s escaped smoothing under the old
+        # 2-word cap, splitting one spoken question across three turns.
+        # Duration is the meaningful test; the word cap is only a guard.
+        words = [
+            w("But", 0.00, 0.20), w("wait", 0.22, 0.45),
+            w("do", 0.50, 0.60), w("you", 0.62, 0.72), w("do", 0.74, 0.82),
+            w("your", 0.90, 1.20), w("own", 1.22, 1.50),
+        ]
+        speakers = [A, A, B, B, B, A, A]
+        assert smooth(words, speakers, CFG) == [A] * 7
 
     def test_long_run_is_never_absorbed(self):
         words = sequence(*[f"w{i}" for i in range(8)])
