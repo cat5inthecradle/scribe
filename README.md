@@ -163,6 +163,19 @@ there is no Redis, Celery, or RabbitMQ here.
 
 Run workers on the **host**, not in a container, to get Metal acceleration.
 
+## A note on credentials
+
+The Postgres username and password default to `scribe`/`scribe`, and the
+container publishes only to `127.0.0.1:5433`. That is deliberate convenience for
+a laptop, **not** a safe default for anything a network can reach. Before
+deploying, set `POSTGRES_PASSWORD` and `SCRIBE_DATABASE_URL` to real values from
+a secret store.
+
+Nothing in this repository should ever hold a Hugging Face token: `hf auth login`
+stores one outside the project, and containers should receive it as an injected
+env var. `data/` — your recordings, archived originals, and transcripts — is
+gitignored, along with media and transcript filenames anywhere in the tree.
+
 ## Configuration
 
 Environment (`SCRIBE_*`) or `scribe.toml`. Every merge threshold is tunable

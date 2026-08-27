@@ -5,9 +5,12 @@ services:
     image: postgres:18-alpine
     container_name: scribe-db
     environment:
-      POSTGRES_USER: scribe
-      POSTGRES_PASSWORD: scribe
-      POSTGRES_DB: scribe
+      # Local development defaults. The container publishes only to localhost,
+      # so these are convenience credentials, not secrets — but override them
+      # for anything reachable over a network, and see the note in the README.
+      POSTGRES_USER: ${POSTGRES_USER:-scribe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scribe}
+      POSTGRES_DB: ${POSTGRES_DB:-scribe}
     ports:
       - "5433:5432"   # 5433 to avoid colliding with a local Postgres
     volumes:

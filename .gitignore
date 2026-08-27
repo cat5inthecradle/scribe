@@ -1,9 +1,44 @@
 .venv/
 __pycache__/
 *.pyc
-data/
-scribe.toml
-.env
-.DS_Store
 .pytest_cache/
 .ruff_cache/
+.DS_Store
+
+# Local configuration and credentials. Never commit these.
+scribe.toml
+.env
+.env.*
+
+# All runtime data: intake, archived originals, scratch, and transcripts.
+data/
+
+# Belt and braces. This tool exists to process private recordings, and a stray
+# file outside data/ must not be publishable by accident. Transcripts are as
+# sensitive as the audio they came from.
+*.mp3
+*.m4a
+*.m4b
+*.mp4
+*.wav
+*.flac
+*.ogg
+*.opus
+*.aac
+*.webm
+*.mkv
+*.mov
+*.m4v
+*.qta
+*.caf
+*.aiff
+*.aif
+transcript.json
+transcript.md
+transcript.txt
+transcript.srt
+transcript.vtt
+speakers.yaml
+
+# Test fixtures are the deliberate exception: short, synthetic, and safe.
+!tests/fixtures/**
