@@ -49,15 +49,22 @@ def slugify(name: str) -> str:
     return (slug or "audio")[:60]
 
 
-def output_dir_for(settings: Settings, info: media.MediaInfo) -> Path:
+def output_dir_for(
+    settings: Settings, info: media.MediaInfo, display_name: str | None = None
+) -> Path:
     """``out/<slug>-<date>-<hash8>``.
 
     The hash suffix keeps two same-named recordings from colliding, and makes the
     directory name a stable function of content — re-running a file lands in the
     same place and overwrites cleanly.
+
+    `display_name` matters when the file on disk is not what the user called it:
+    the intake watcher parks sources at ``work/<job id>/source.ext``, so slugging
+    the actual path would name every queued output "source".
     """
     date = datetime.now(UTC).strftime("%Y%m%d")
-    return settings.out / f"{slugify(info.path.name)}-{date}-{info.sha256[:8]}"
+    stem = slugify(display_name or info.path.name)
+    return settings.out / f"{stem}-{date}-{info.sha256[:8]}"
 
 
 class _Timer:
@@ -87,8 +94,14 @@ def run(
     out_dir: Path | None = None,
     on_progress: ProgressFn | None = None,
     keep_wav: bool = False,
+    display_name: str | None = None,
 ) -> PipelineResult:
-    """Transcribe and diarize `source`, writing every output format."""
+    """Transcribe and diarize `source`, writing every output format.
+
+    `display_name` overrides the name recorded in the transcript and used for
+    the output directory. The queue path needs it because the file it hands over
+    has been renamed to a neutral ``source.ext`` under the work directory.
+    """
     report: ProgressFn = on_progress or (lambda _s, _f: None)
     timer = _Timer()
 
@@ -97,7 +110,8 @@ def run(
         info = media.inspect(source)
         report("inspect", 1.0)
 
-    out_dir = out_dir or output_dir_for(settings, info)
+    name = display_name or info.path.name
+    out_dir = out_dir or output_dir_for(settings, info, name)
     out_dir.mkdir(parents=True, exist_ok=True)
     work = settings.work / info.sha256[:16]
     wav = work / "audio.wav"
@@ -150,7 +164,7 @@ def run(
 
         transcript = Transcript(
             source=SourceInfo(
-                filename=info.path.name,
+                filename=name,
                 sha256=info.sha256,
                 duration_s=round(info.duration_s, 3),
                 bytes=info.bytes,
@@ -179,10 +193,13 @@ def run(
             report("render", 1.0)
 
     finally:
+        # Only the derived WAV is removed, and only by name. `work` holds
+        # nothing irreplaceable by design (see Settings.archive), but deleting
+        # narrowly rather than recursively keeps that true even if that changes.
         if not keep_wav:
             wav.unlink(missing_ok=True)
             with contextlib.suppress(OSError):
-                work.rmdir()
+                work.rmdir()  # succeeds only if empty
 
     return PipelineResult(
         transcript=transcript,

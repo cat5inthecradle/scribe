@@ -91,10 +91,38 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    database_url: str = "postgresql+psycopg://scribe:scribe@localhost:5433/scribe"
+    """Shared job store. Both the API and every worker point at this."""
+
+    worker_id: str | None = None
+    """Identifies the claiming worker in logs; defaults to host:pid."""
+
+    stale_after_s: float = 120.0
+    """A claimed job whose heartbeat is older than this is reclaimable.
+
+    Must comfortably exceed the heartbeat interval, but stay well under the time
+    a human would wait before assuming the queue is stuck.
+    """
+
+    poll_interval_s: float = 2.0
+    """How often an idle worker asks for work."""
+
+    scan_interval_s: float = 10.0
+    """Intake reconcile scan. Primary discovery mechanism -- see `scribe.intake`."""
+
+    min_stable_age_s: float = 5.0
+    """A file must have been untouched this long before it is picked up.
+
+    Guards against transcribing a partially copied recording. Checked against
+    mtime so it holds for a one-shot scan with no prior observation, which a
+    purely cross-scan comparison cannot do.
+    """
+
     data_dir: Path = Path("data")
     intake_dir: Path | None = None
     work_dir: Path | None = None
     out_dir: Path | None = None
+    archive_dir: Path | None = None
 
     hf_token: str | None = None
     """Needed once to download the gated pyannote weights.
@@ -138,8 +166,19 @@ class Settings(BaseSettings):
     def out(self) -> Path:
         return self.out_dir or self.data_dir / "out"
 
+    @property
+    def archive(self) -> Path:
+        """Where original recordings live once taken out of the intake folder.
+
+        Kept strictly separate from `work`: the intake watcher *moves* files
+        rather than copying them, so for a while this holds the only copy of an
+        irreplaceable recording. `work` is scratch that gets emptied — the two
+        must never be the same place.
+        """
+        return self.archive_dir or self.data_dir / "archive"
+
     def ensure_dirs(self) -> None:
-        for d in (self.intake, self.work, self.out):
+        for d in (self.intake, self.work, self.out, self.archive):
             d.mkdir(parents=True, exist_ok=True)
 
     def resolved_hf_token(self) -> str | None:

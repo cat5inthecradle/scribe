@@ -9,6 +9,10 @@ dependencies = [
     "typer>=0.15",
     "rich>=13.9",
     "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+    "watchfiles>=1.0",
 ]
 
 [project.optional-dependencies]

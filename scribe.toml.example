@@ -1,6 +1,11 @@
 # Copy to scribe.toml to override defaults. Env vars (SCRIBE_*) win over this.
 
-# data_dir = "data"          # intake/, work/, out/ live here
+# data_dir = "data"          # intake/, archive/, work/, out/ live here
+# database_url = "postgresql+psycopg://scribe:scribe@localhost:5433/scribe"
+
+# stale_after_s = 120        # heartbeat age before a job is reclaimed
+# scan_interval_s = 10       # how often the intake folder is scanned
+# min_stable_age_s = 5       # a file must be untouched this long to be picked up
 
 [asr]
 backend = "mlx"              # "mlx" on Apple Silicon, "onnx" in containers

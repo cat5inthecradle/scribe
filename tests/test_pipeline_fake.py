@@ -136,6 +136,14 @@ class TestRun:
         result = pipe.run(mp4, settings)
         assert result.transcript.source.filename == "call.mp4"
 
+    def test_display_name_overrides_the_path_for_output_and_transcript(
+        self, wav, settings, stubbed
+    ):
+        # Mirrors the queue path, where the file on disk is `source.wav`.
+        result = pipe.run(wav, settings, display_name="Team Sync 2026-08-26.m4a")
+        assert result.transcript.source.filename == "Team Sync 2026-08-26.m4a"
+        assert result.out_dir.name.startswith("team-sync-2026-08-26-")
+
     def test_existing_names_survive_a_rerun(self, wav, settings, stubbed):
         first = pipe.run(wav, settings)
         sidecar = first.out_dir / "speakers.yaml"

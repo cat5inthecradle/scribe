@@ -26,9 +26,52 @@ uv run scribe doctor
 
 ## Use
 
+### One file, right now
+
 ```bash
 uv run scribe run recording.m4a
 ```
+
+No database needed. Best for trying things out and for judging output quality.
+
+### The folder-drop service
+
+```bash
+docker compose up -d          # Postgres
+uv run scribe db upgrade      # apply migrations
+uv run scribe dev             # watch intake + run one worker
+```
+
+Drop files into `data/intake/` and they get transcribed. `scribe dev` is the
+convenience form; the pieces run separately in production:
+
+```bash
+uv run scribe watch     # queue files as they settle (run exactly one)
+uv run scribe worker    # process the queue (run as many as you like)
+```
+
+Inspect and control the queue:
+
+```bash
+uv run scribe queue --watch    # live status
+uv run scribe logs 77748a40    # one job's event log (id prefix is enough)
+uv run scribe submit a.m4a     # enqueue explicitly
+uv run scribe retry 77748a40   # revive a dead job
+uv run scribe scan             # one-shot intake scan
+```
+
+### Where files go
+
+| directory | holds | safe to delete? |
+|---|---|---|
+| `data/intake/` | files you drop in | yes |
+| `data/archive/` | **your original recordings**, moved out of intake | **no** |
+| `data/work/` | scratch (normalized WAV) | yes, any time |
+| `data/out/` | transcripts | no |
+
+Intake **moves** files rather than copying, so `archive/` briefly holds the only
+copy of a recording. That is why originals never go in `work/`, which is scratch
+and gets emptied.
 
 Outputs land in `data/out/<name>-<date>-<hash>/`:
 
@@ -102,6 +145,24 @@ native host process and the portable path is CPU-only.
 Both are the same Parakeet model, so transcripts stay comparable. Select with
 `--backend mlx|onnx`. Kubernetes buys always-on availability here, not speed.
 
+## Queue design
+
+`jobs` is both the record and the queue. Claiming a job is
+`SELECT ... FOR UPDATE SKIP LOCKED`, so many workers can race for the same row
+and exactly one wins without any of them blocking. That single primitive is why
+there is no Redis, Celery, or RabbitMQ here.
+
+- **Dedupe by content hash** — re-dropping a recording under a new name is the
+  same job. `--force` re-runs it.
+- **Crash recovery** — a worker holds its job with a heartbeat. If the process
+  dies, the heartbeat lapses and another worker reclaims the job. Nothing needs
+  unwinding on an abrupt exit, so SIGTERM just stops claiming new work.
+- **Bounded retries with backoff** — failures wait 15s, then 60s, then 300s
+  before the next attempt. Without the delay a job that fails in 50ms would burn
+  every attempt in a tenth of a second, and retrying would be pointless.
+
+Run workers on the **host**, not in a container, to get Metal acceleration.
+
 ## Configuration
 
 Environment (`SCRIBE_*`) or `scribe.toml`. Every merge threshold is tunable
@@ -119,9 +180,11 @@ turn_gap_s = 1.5              # silence that splits a turn
 ## Development
 
 ```bash
-uv run pytest          # 94 tests, no models or network needed
+uv run pytest          # 155 tests; models are stubbed
 uv run ruff check src tests
 ```
 
-The test suite deliberately stubs the models out, so it stays fast and runs
-without a Hugging Face token.
+The test suite stubs the models out, so it stays fast and needs no Hugging Face
+token. Queue and intake tests need Postgres (`docker compose up -d`) and skip
+cleanly without it — they use a real database because the correctness argument
+rests on `SKIP LOCKED`, which no fake reproduces.
