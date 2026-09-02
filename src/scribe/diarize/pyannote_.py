@@ -9,6 +9,7 @@ overlapping timeline is guesswork; getting it from the model is not.
 
 from __future__ import annotations
 
+import copy
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -87,6 +88,8 @@ class PyannoteDiarizer:
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
+        clustering_threshold: float | None = None,
+        min_duration_off: float | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> None:
         self.model_id = model
@@ -95,8 +98,11 @@ class PyannoteDiarizer:
         self._num_speakers = num_speakers
         self._min_speakers = min_speakers
         self._max_speakers = max_speakers
+        self._clustering_threshold = clustering_threshold
+        self._min_duration_off = min_duration_off
         self._on_progress = on_progress
         self._pipeline = None
+        self.parameters: dict = {}
 
     def _load(self):
         if self._pipeline is not None:
@@ -127,9 +133,37 @@ class PyannoteDiarizer:
                 )
             )
 
+        self._apply_overrides(pipeline)
         self._pipeline = pipeline.to(torch.device(device))
         self.device = device
         return self._pipeline
+
+    def _apply_overrides(self, pipeline) -> None:
+        """Override pipeline hyperparameters, if any were configured.
+
+        `instantiate` replaces the whole parameter set rather than merging, so
+        the model's own defaults are read first and only the requested keys are
+        changed — otherwise setting one value would silently reset the others
+        (`Fa` and `Fb`) to whatever we happened to hardcode.
+        """
+        defaults = pipeline.parameters(instantiated=True)
+        self.parameters = copy.deepcopy(defaults)
+
+        overrides = (
+            ("clustering", "threshold", self._clustering_threshold),
+            ("segmentation", "min_duration_off", self._min_duration_off),
+        )
+        changed = False
+        for section, key, value in overrides:
+            if value is None:
+                continue
+            if section not in self.parameters:
+                continue
+            self.parameters[section][key] = value
+            changed = True
+
+        if changed:
+            pipeline.instantiate(self.parameters)
 
     def _constraints(self) -> dict[str, int]:
         # Only forward what was set: passing num_speakers=None alongside
@@ -166,7 +200,41 @@ class PyannoteDiarizer:
 
         if self._on_progress:
             self._on_progress(1.0)
-        return Diarization(exclusive=exclusive, overlapped=overlapped)
+        return Diarization(
+            exclusive=exclusive,
+            overlapped=overlapped,
+            embeddings=_extract_embeddings(output),
+        )
+
+
+def _extract_embeddings(output) -> dict[str, list[float]] | None:
+    """Pull the per-speaker embedding centroids out of a pipeline result.
+
+    These are what make recognising a speaker across recordings possible: the
+    centroid is a stable voice fingerprint, so an enrolled sample can be
+    matched by cosine similarity. Rows line up with the diarization's label
+    order, which is the only thing tying a vector to a speaker.
+    """
+    centroids = getattr(output, "speaker_embeddings", None)
+    if centroids is None:
+        return None
+
+    annotation = getattr(output, "exclusive_speaker_diarization", None) or getattr(
+        output, "speaker_diarization", None
+    )
+    if annotation is None:
+        return None
+
+    labels = list(annotation.labels())
+    if len(labels) != len(centroids):
+        # Mismatched rows would silently attribute one person's voice to
+        # another, which is worse than having no embeddings at all.
+        return None
+
+    return {
+        str(label): [float(x) for x in centroids[i]]
+        for i, label in enumerate(labels)
+    }
 
 
 def _to_segments(annotation) -> list[Segment]:

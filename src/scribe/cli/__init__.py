@@ -11,7 +11,7 @@ import sys
 
 import typer
 
-from scribe.cli import admin, jobs, service, transcribe
+from scribe.cli import admin, jobs, service, transcribe, tune
 
 app = typer.Typer(
     add_completion=False,
@@ -22,6 +22,7 @@ app = typer.Typer(
 # One-shot transcription, no database.
 app.command("run")(transcribe.run_cmd)
 app.command("rerender")(transcribe.rerender_cmd)
+app.command("tune")(tune.tune_cmd)
 
 # Queue control.
 app.command("submit")(jobs.submit_cmd)

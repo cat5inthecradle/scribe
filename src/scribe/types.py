@@ -72,6 +72,12 @@ class Diarization:
 
     exclusive: list[Segment]
     overlapped: list[Segment]
+    embeddings: dict[str, list[float]] | None = None
+    """Per-speaker voice embedding, keyed by raw label.
+
+    Kept as plain lists rather than arrays so this type stays free of a numpy
+    import. Used to recognise enrolled speakers across recordings.
+    """
 
     @property
     def speakers(self) -> list[str]:

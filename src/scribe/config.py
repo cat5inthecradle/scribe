@@ -80,6 +80,34 @@ class DiarizeSettings(BaseModel):
     min_speakers: int | None = None
     max_speakers: int | None = None
 
+    # Pipeline hyperparameters. None means "leave the model's own default",
+    # rather than restating it here: the shipped default can change between
+    # model versions and a hardcoded copy would silently pin an old value.
+    clustering_threshold: float | None = None
+    """Agglomerative clustering cutoff on speaker embeddings (default 0.6).
+
+    The main quality knob. *Lower* splits more eagerly — more speakers, and
+    short interjections less likely to be absorbed into a neighbour's turn.
+    Higher merges more, which trades those interjections for fewer spurious
+    speakers. Sweep it with `scribe tune`.
+    """
+
+    min_duration_off: float | None = None
+    """Silence shorter than this is treated as continued speech (default 0.0).
+
+    Raising it bridges brief pauses, producing fewer and longer segments.
+    """
+
+    embedding_match_threshold: float = 0.5
+    """Cosine similarity required to auto-name an enrolled speaker.
+
+    Measured on synthetic voices: the same person across different recordings
+    scored 0.92-0.96 while different people stayed at or below 0.25, so the
+    boundary is wide. Real voices vary more (mic, room, illness), so this
+    stays conservative and configurable — leaving someone as "Speaker 2" is
+    much better than confidently labelling them as the wrong person.
+    """
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

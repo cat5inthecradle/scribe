@@ -152,6 +152,8 @@ def run(
                 num_speakers=settings.diarize.num_speakers,
                 min_speakers=settings.diarize.min_speakers,
                 max_speakers=settings.diarize.max_speakers,
+                clustering_threshold=settings.diarize.clustering_threshold,
+                min_duration_off=settings.diarize.min_duration_off,
                 on_progress=lambda f: report("diarize", f),
             )
             diarization = diarizer.diarize(wav)
