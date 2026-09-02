@@ -17,13 +17,23 @@ from sqlalchemy.orm import Session, sessionmaker
 from scribe.config import Settings
 
 _engine: Engine | None = None
+_engine_url: str | None = None
 _Session: sessionmaker[Session] | None = None
 
 
 def engine_for(settings: Settings) -> Engine:
-    """Process-wide engine, created once."""
-    global _engine, _Session
+    """Engine for `settings`, cached per URL.
+
+    Keyed by URL rather than simply "created once": a cache that ignored the
+    requested URL would hand back a connection to whichever database happened
+    to be asked for first, so code believing it was talking to a scratch
+    database would quietly operate on the real one.
+    """
+    global _engine, _engine_url, _Session
+    if _engine is not None and _engine_url != settings.database_url:
+        reset_engine()
     if _engine is None:
+        _engine_url = settings.database_url
         _engine = create_engine(
             settings.database_url,
             # A worker holds one connection for a long transcription; recycling
@@ -61,10 +71,11 @@ def session_scope(settings: Settings) -> Iterator[Session]:
 
 def reset_engine() -> None:
     """Drop the cached engine. Tests use this to switch databases."""
-    global _engine, _Session
+    global _engine, _engine_url, _Session
     if _engine is not None:
         _engine.dispose()
     _engine = None
+    _engine_url = None
     _Session = None
 
 

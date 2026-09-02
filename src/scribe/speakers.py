@@ -21,25 +21,40 @@ _HEADER = """\
 #     scribe rerender {out_dir}
 #
 # Only the `name:` values are read back; everything else is regenerated.
+# `matched` and `candidates` are hints from the enrolled-voice library --
+# confirm one interactively with `scribe identify {out_dir}`, which also
+# enrolls the confirmation as a new sample.
 """
 
 
-def write(transcript: Transcript, out_dir: Path) -> Path:
-    """Write (or refresh) the sidecar, preserving any names already set."""
+def write(
+    transcript: Transcript,
+    out_dir: Path,
+    candidates: dict[str, list[dict[str, object]]] | None = None,
+) -> Path:
+    """Write (or refresh) the sidecar, preserving any names already set.
+
+    `candidates` carries the closest enrolled voices per speaker. They are
+    informational only — written so someone editing this file by hand can see
+    who the library thought it might be, and regenerated on every write.
+    """
     path = out_dir / FILENAME
     existing = read(out_dir)
+    candidates = candidates or {}
 
-    payload = {
-        "speakers": [
-            {
-                "id": s.id,
-                "label": s.label,
-                "name": existing.get(s.id) or s.name,
-                "speech_s": s.speech_s,
-            }
-            for s in transcript.speakers
-        ]
-    }
+    entries: list[dict[str, object]] = []
+    for s in transcript.speakers:
+        entry: dict[str, object] = {
+            "id": s.id,
+            "label": s.label,
+            "name": existing.get(s.id) or s.name,
+            "speech_s": s.speech_s,
+        }
+        if hints := candidates.get(s.id):
+            entry["candidates"] = hints
+        entries.append(entry)
+
+    payload = {"speakers": entries}
     body = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
     path.write_text(_HEADER.format(out_dir=out_dir) + body, encoding="utf-8")
     return path

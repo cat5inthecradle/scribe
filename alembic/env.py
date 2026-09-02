@@ -23,7 +23,14 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-config.set_main_option("sqlalchemy.url", load_settings().database_url)
+# Fall back to the application's configured database, but never override a
+# URL the caller already set. Overriding unconditionally means a caller that
+# explicitly targets another database -- a test using a throwaway one, or an
+# operator migrating a staging copy -- is silently redirected at the real one.
+# `downgrade base` then drops every table in it. This has already destroyed
+# data once.
+if not config.get_main_option("sqlalchemy.url", None):
+    config.set_main_option("sqlalchemy.url", load_settings().database_url)
 
 
 def run_migrations_offline() -> None:

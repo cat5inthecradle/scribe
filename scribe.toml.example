@@ -13,6 +13,9 @@ backend = "mlx"              # "mlx" on Apple Silicon, "onnx" in containers
 
 [diarize]
 device = "auto"              # auto | cpu | mps | cuda — benchmark, don't assume
+# clustering_threshold = 0.6 # main quality knob; lower splits more eagerly
+# min_duration_off = 0.0     # bridge silences shorter than this
+# embedding_match_threshold = 0.5   # similarity needed to auto-name a speaker
 # num_speakers = 3           # pin it when known; improves the split noticeably
 # min_speakers = 2
 # max_speakers = 6

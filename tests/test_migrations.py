@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 
-MIGRATION_DB = "scribe_migrationcheck"
+MIGRATION_DB = "scribe_test_migrationcheck"
 
 
 @pytest.fixture
@@ -28,6 +28,8 @@ def fresh_database(db_settings):
         conn.execute(f'CREATE DATABASE "{MIGRATION_DB}"')
 
     url = urlunsplit(parts._replace(path=f"/{MIGRATION_DB}"))
+    # Guard against ever running `downgrade base` on real data again.
+    assert MIGRATION_DB.startswith("scribe_test")
     yield url
 
     with psycopg.connect(admin, autocommit=True, connect_timeout=5) as conn:
@@ -42,6 +44,24 @@ def _config(url: str):
     config.set_main_option("script_location", str(root / "alembic"))
     config.set_main_option("sqlalchemy.url", url)
     return config
+
+
+def test_env_py_honours_an_explicit_url():
+    """Regression: env.py used to override the caller's URL unconditionally.
+
+    That silently redirected these tests at the development database, where
+    `downgrade base` dropped every table. The URL a caller sets must win.
+    """
+    from alembic import context  # noqa: F401  (import proves the module loads)
+
+    url = "postgresql+psycopg://someone:secret@example.invalid:5432/scribe_test_x"
+    config = _config(url)
+    assert config.get_main_option("sqlalchemy.url") == url
+
+    env = (Path(__file__).resolve().parents[1] / "alembic" / "env.py").read_text()
+    assert 'if not config.get_main_option("sqlalchemy.url", None):' in env, (
+        "env.py must only fall back to settings when no URL was configured"
+    )
 
 
 def test_upgrade_produces_a_schema_matching_the_models(fresh_database):

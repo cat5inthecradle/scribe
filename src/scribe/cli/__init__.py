@@ -11,7 +11,7 @@ import sys
 
 import typer
 
-from scribe.cli import admin, jobs, service, transcribe, tune
+from scribe.cli import admin, jobs, service, transcribe, tune, voices
 
 app = typer.Typer(
     add_completion=False,
@@ -23,6 +23,11 @@ app = typer.Typer(
 app.command("run")(transcribe.run_cmd)
 app.command("rerender")(transcribe.rerender_cmd)
 app.command("tune")(tune.tune_cmd)
+
+# Speaker enrollment.
+app.command("identify")(voices.identify_cmd)
+app.command("enroll")(voices.enroll_cmd)
+app.command("voices")(voices.voices_cmd)
 
 # Queue control.
 app.command("submit")(jobs.submit_cmd)

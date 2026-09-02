@@ -46,6 +46,7 @@ from urllib.parse import urlsplit, urlunsplit  # noqa: E402
 
 DEFAULT_DEV_URL = "postgresql+psycopg://scribe:scribe@localhost:5433/scribe"
 TEST_DB_NAME = "scribe_test"
+TEST_DB_PREFIX = "scribe_test"
 
 
 def _test_database_url() -> str:
@@ -71,6 +72,21 @@ def _create_test_database(url: str) -> None:
             conn.execute(f'CREATE DATABASE "{name}"')
 
 
+def _refuse_non_test_database(name: str | None, operation: str) -> None:
+    """Abort a destructive operation aimed at anything but a test database.
+
+    Not paranoia: `alembic/env.py` used to override whatever URL its caller
+    configured, so the migration tests ran `downgrade base` against the
+    development database and dropped every table in it. A name check is cheap
+    and catches the whole family of "pointed at the wrong database" mistakes.
+    """
+    if not name or not name.startswith(TEST_DB_PREFIX):
+        pytest.fail(
+            f"refusing to {operation} database {name!r}: "
+            f"test databases must be named {TEST_DB_PREFIX}*"
+        )
+
+
 @pytest.fixture(scope="session")
 def db_settings(tmp_path_factory):
     """Session-wide settings pointed at a freshly created test database."""
@@ -90,8 +106,10 @@ def db_settings(tmp_path_factory):
     settings.ensure_dirs()
 
     reset_engine()
-    Base.metadata.drop_all(engine_for(settings))
-    Base.metadata.create_all(engine_for(settings))
+    engine = engine_for(settings)
+    _refuse_non_test_database(engine.url.database, "DROP TABLES IN")
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
     yield settings
     reset_engine()
 
@@ -110,8 +128,16 @@ def db(db_settings):
 
     from scribe.db import engine_for
 
-    with engine_for(db_settings).begin() as conn:
-        conn.execute(text("TRUNCATE jobs, job_events RESTART IDENTITY CASCADE"))
+    # Derived from the metadata rather than named explicitly, so a table added
+    # later cannot silently leak state between tests.
+    from scribe.models import Base
+
+    engine = engine_for(db_settings)
+    _refuse_non_test_database(engine.url.database, "TRUNCATE")
+
+    tables = ", ".join(f'"{t}"' for t in Base.metadata.tables)
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
 
     for directory in (db_settings.intake, db_settings.work, db_settings.out):
         shutil.rmtree(directory, ignore_errors=True)

@@ -183,7 +183,20 @@ def run(
             turns=turns,
         )
 
-        # Names set on a previous run of the same audio survive a re-run.
+        # Voice embeddings are written beside the outputs so speakers can be
+        # identified later without re-running any inference.
+        candidates: dict[str, list[dict[str, object]]] = {}
+        if diarization.embeddings:
+            write_embeddings(out_dir, diarization.embeddings, transcript)
+            auto, candidates = identify_speakers(
+                settings, diarization.embeddings
+            )
+            for speaker in transcript.speakers:
+                if name := auto.get(speaker.id):
+                    speaker.name = name
+
+        # Names set by hand always win over an automatic match, and survive
+        # a re-run of the same audio.
         if names := sidecar.read(out_dir):
             transcript = sidecar.apply(transcript, names)
 
@@ -191,7 +204,7 @@ def run(
             report("render", 0.0)
             transcript.pipeline.durations_s = dict(timer.durations)
             written = render_all(transcript, out_dir)
-            written.append(sidecar.write(transcript, out_dir))
+            written.append(sidecar.write(transcript, out_dir, candidates))
             report("render", 1.0)
 
     finally:
@@ -209,6 +222,94 @@ def run(
         written=written,
         durations=timer.durations,
     )
+
+
+EMBEDDINGS_FILE = "embeddings.json"
+
+
+def write_embeddings(
+    out_dir: Path, embeddings: dict[str, list[float]], transcript: Transcript
+) -> Path:
+    """Save per-speaker voice embeddings alongside the transcript.
+
+    Kept with the outputs rather than in the database so an output directory
+    stays self-describing, and so `scribe identify` can name speakers later
+    without re-running diarization on the audio — which may since have been
+    archived or deleted.
+    """
+    import json
+
+    speech = {s.id: s.speech_s for s in transcript.speakers}
+    payload = {
+        "speakers": [
+            {
+                "id": label,
+                "label": next(
+                    (s.label for s in transcript.speakers if s.id == label), label
+                ),
+                "speech_s": speech.get(label, 0.0),
+                "embedding": vector,
+            }
+            for label, vector in embeddings.items()
+        ]
+    }
+    path = out_dir / EMBEDDINGS_FILE
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def read_embeddings(out_dir: Path) -> dict[str, list[float]]:
+    """Load saved embeddings, or an empty dict if there are none."""
+    import json
+
+    path = out_dir / EMBEDDINGS_FILE
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {
+        entry["id"]: entry["embedding"]
+        for entry in data.get("speakers", [])
+        if entry.get("id") and entry.get("embedding")
+    }
+
+
+def identify_speakers(
+    settings: Settings, embeddings: dict[str, list[float]]
+) -> tuple[dict[str, str], dict[str, list[dict[str, object]]]]:
+    """Match diarized speakers against the enrolled-voice library.
+
+    Returns confident names and, separately, the closest candidates for every
+    speaker so a human can confirm the near misses.
+
+    Deliberately best-effort: `scribe run` is meant to work with no database at
+    all, so an unreachable Postgres degrades to anonymous speakers rather than
+    failing a transcription that is otherwise complete.
+    """
+    from scribe import voices
+    from scribe.db import session_scope
+
+    try:
+        with session_scope(settings) as session:
+            if not voices.enrolled(session):
+                return {}, {}
+
+            matched = voices.identify_all(
+                session, embeddings, settings.diarize.embedding_match_threshold
+            )
+            names = {label: m.name for label, m in matched.items()}
+            hints = {
+                label: [
+                    {"name": m.name, "similarity": round(m.similarity, 3)}
+                    for m in voices.rank(session, vector, limit=3)
+                ]
+                for label, vector in embeddings.items()
+            }
+            return names, hints
+    except Exception:  # noqa: BLE001 - enrollment is an enhancement, not a requirement
+        return {}, {}
 
 
 def rerender(out_dir: Path) -> PipelineResult:

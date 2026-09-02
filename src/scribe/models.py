@@ -26,6 +26,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -161,3 +162,43 @@ class JobEvent(Base):
         # The UI reads one job's events newest-last; this serves that directly.
         Index("ix_job_events_job_ts", "job_id", "ts"),
     )
+
+
+class Voice(Base):
+    """One enrolled voice sample.
+
+    A person gets a *row per sample*, not one averaged vector. Averaging blurs
+    a voice across recording conditions, so a hoarse day or a different mic
+    would drag the reference toward the middle and weaken every future match.
+    Matching takes the maximum similarity over a person's samples instead, so
+    each new sample can only help.
+    """
+
+    __tablename__ = "voices"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    embedding: Mapped[list[float]] = mapped_column(ARRAY(Float))
+    dim: Mapped[int] = mapped_column(Integer)
+    """Stored explicitly so a model change producing different-sized vectors is
+    detected rather than silently compared against incompatible samples."""
+
+    source_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    """Recording this sample came from, so a bad enrollment can be traced."""
+
+    speech_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    """How much speech backed this sample. Short samples are less reliable."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("dim > 0", name="ck_voices_dim"),
+        Index("ix_voices_name_created", "name", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Voice {self.name!r} dim={self.dim}>"

@@ -83,7 +83,38 @@ Outputs land in `data/out/<name>-<date>-<hash>/`:
 | `transcript.srt` / `.vtt` | subtitles, re-chunked to readable cue lengths |
 | `speakers.yaml` | map speakers to real names |
 
-### Naming speakers
+### Naming speakers automatically
+
+Diarization tells voices apart but numbers them arbitrarily, so the same
+colleague is "Speaker 1" one week and "Speaker 3" the next. Enrollment fixes
+that: confirm who someone is once, and they are recognised in every later
+recording.
+
+```bash
+uv run scribe identify data/out/<dir>   # confirm who each speaker was
+uv run scribe voices                    # who is on file
+uv run scribe voices --forget "Name"    # remove someone
+```
+
+`identify` runs **no inference** — voice embeddings are saved beside the
+transcript when it is produced, so naming people works even after the audio has
+been archived away. Every confirmation is stored as an additional sample, so
+recognition improves with use.
+
+Measured behaviour: the same voice across different recordings scores 0.92–0.96
+cosine similarity, while different voices stay at or below 0.34. The default
+threshold of 0.5 sits in that gap. Below it, a speaker is left anonymous rather
+than guessed at — a wrong name is worse than no name in a transcript you will
+trust months later. `speakers.yaml` shows the closest candidates and their
+scores so you can judge the near misses yourself.
+
+To enroll from a clean solo recording instead:
+
+```bash
+uv run scribe enroll "Name" sample.m4a
+```
+
+### Naming speakers by hand
 
 Diarization can tell voices apart but not who they belong to. Edit the `name:`
 fields in `speakers.yaml`, then:
@@ -175,6 +206,31 @@ Nothing in this repository should ever hold a Hugging Face token: `hf auth login
 stores one outside the project, and containers should receive it as an injected
 env var. `data/` — your recordings, archived originals, and transcripts — is
 gitignored, along with media and transcript filenames anywhere in the tree.
+
+## Tuning diarization
+
+`scribe tune` sweeps the setting that most affects speaker separation:
+
+```bash
+uv run scribe tune recording.m4a
+uv run scribe tune recording.m4a -t 0.3,0.45,0.6 --show 0.45
+```
+
+It transcribes once and repeats only diarization, since ASR output does not
+depend on any diarization setting — so a five-value sweep costs about five
+diarizations rather than five full pipelines.
+
+`clustering_threshold` (default 0.6) is the agglomerative cutoff on speaker
+embeddings. **Lower splits more eagerly**, so short interjections are less
+likely to be absorbed into a neighbour's turn; higher merges more. The `<4w`
+column counts turns too short to be real speech, which measures the
+speaker-flapping artifact directly.
+
+A caveat worth knowing: on synthetic (text-to-speech) audio, every threshold
+from 0.3 to 0.9 produces identical output — pyannote is entirely robust across
+that range on clean voices. This tool only tells you anything on real
+recordings that genuinely give the diarizer trouble: overlapping speech,
+similar-sounding people, poor microphones.
 
 ## Configuration
 
