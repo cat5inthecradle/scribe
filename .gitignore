@@ -5,6 +5,11 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
 # Local configuration and credentials. Never commit these.
 scribe.toml
 .env
